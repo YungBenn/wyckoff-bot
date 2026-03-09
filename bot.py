@@ -43,6 +43,13 @@ def calculate_ema(series, period):
     """Calculates EMA using pure Pandas."""
     return series.ewm(span=period, adjust=False).mean()
 
+def close_position(high, low, close):
+    """Returns where close sits within the candle range. 0=at low, 1=at high, 0.5=doji."""
+    spread = high - low
+    if spread == 0:
+        return 0.5
+    return (close - low) / spread
+
 def get_data(client, symbol, interval):
     """Fetches candles and computes indicators."""
     try:
