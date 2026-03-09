@@ -225,14 +225,28 @@ def test_bullish_absorption_can_fire_on_red_candle_in_upper_range():
     low  = df.iloc[idx]['low']
     high = df.iloc[idx]['high']
     spread = high - low
+
     # Red candle (close < open), close in upper 55% of range
     df.iloc[idx, df.columns.get_loc('open')]  = low + spread * 0.65
-    df.iloc[idx, df.columns.get_loc('close')] = low + spread * 0.55  # close < open (red) but upper range
+    df.iloc[idx, df.columns.get_loc('close')] = low + spread * 0.55  # red, upper range
     df.iloc[idx, df.columns.get_loc('volume')] = df['vol_sma'].iloc[idx] * 3
     df.iloc[idx, df.columns.get_loc('high_volume')] = True
     df.iloc[idx, df.columns.get_loc('spread')] = spread * 0.3   # narrow
     df.iloc[idx, df.columns.get_loc('avg_spread')] = spread
+
+    # Inject a clear swing low well below the entry zone so stop is found
+    lower_entry = min(df.iloc[idx]['open'], df.iloc[idx]['close'])
+    swing_idx = idx - 20  # 20 bars back
+    df.iloc[swing_idx, df.columns.get_loc('low')] = lower_entry - 800  # clear swing low below entry
+    # Make it a clear local minimum
+    for offset in range(-4, 5):
+        if offset != 0 and 0 <= swing_idx + offset < len(df):
+            df.iloc[swing_idx + offset, df.columns.get_loc('low')] = lower_entry - 200
+
     signal = b.check_signals(df, '1h')
-    # Either None (no swing found / R:R filtered) or BULLISH signal — never BEARISH
-    if signal is not None:
-        assert 'BEARISH' not in signal or 'EXHAUSTION' in signal
+    # With a valid swing low present, bullish absorption MUST fire
+    assert signal is not None, "Expected a bullish absorption signal but got None"
+    assert 'ABSORPTION SIGNAL (BULLISH)' in signal
+    assert '📍 Entry Zone' in signal
+    assert '🛑 Stop Loss' in signal
+    assert '🎯 T1' in signal

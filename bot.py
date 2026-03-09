@@ -241,7 +241,8 @@ def check_signals(df, interval):
 
     # --- 2. EXHAUSTION ---
     # Bullish Exhaustion (Selling Climax)
-    if (trend == "BEARISH" and 
+    if (signal is None and
+        trend == "BEARISH" and
         prev['high_volume'] and 
         prev['low'] < df.iloc[-6]['price_low'] and 
         prev['rsi'] > df.iloc[-6]['rsi_low']):
