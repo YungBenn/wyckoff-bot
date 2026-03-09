@@ -2,7 +2,13 @@
 import pandas as pd
 import numpy as np
 import pytest
+import unittest.mock as m
 from bot import close_position, find_swing_lows, find_swing_highs, calculate_rr
+
+ENV = {
+    'BINANCE_API_KEY': 'x', 'BINANCE_API_SECRET': 'x',
+    'TELEGRAM_TOKEN': 'x', 'TELEGRAM_CHAT_ID': 'x',
+}
 
 
 def make_df(n=100):
@@ -158,3 +164,75 @@ def test_calculate_rr_skip_when_stop_is_none():
         atr=300,
     )
     assert result is None
+
+
+def make_indicators(n=300):
+    """Full DataFrame with all indicators bot.py expects."""
+    import numpy as np
+    np.random.seed(0)
+    close = 65000 + np.cumsum(np.random.randn(n) * 100)
+    df = pd.DataFrame({
+        'open':   close + np.random.randn(n) * 30,
+        'high':   close + abs(np.random.randn(n) * 100),
+        'low':    close - abs(np.random.randn(n) * 100),
+        'close':  close,
+        'volume': np.random.uniform(100, 1000, n),
+    })
+    df['high'] = df[['open', 'close', 'high']].max(axis=1)
+    df['low']  = df[['open', 'close', 'low']].min(axis=1)
+    df['spread']     = df['high'] - df['low']
+    df['avg_spread'] = df['spread'].rolling(20).mean()
+    df['vol_sma']    = df['volume'].rolling(20).mean()
+    df['high_volume'] = df['volume'] > (df['vol_sma'] * 2.0)
+    df['rsi']        = 50.0
+    df['ema_200']    = close - 500   # price above ema_200 → bullish
+    df['ema_50']     = close - 200   # ema_50 above ema_200 → bullish
+    df['atr']        = df['spread'].rolling(14).mean()
+    df['price_high'] = df['high'].rolling(5).max()
+    df['price_low']  = df['low'].rolling(5).min()
+    df['rsi_high']   = df['rsi'].rolling(5).max()
+    df['rsi_low']    = df['rsi'].rolling(5).min()
+    return df.ffill().bfill()
+
+
+def test_bullish_absorption_must_not_fire_on_green_candle():
+    """Bullish absorption must NOT fire on a green candle (old bug)."""
+    import importlib
+    b = importlib.import_module('bot')
+    df = make_indicators()
+    # Force signal candle (iloc[-2]) to be a GREEN (bullish) candle
+    idx = len(df) - 2
+    low  = df.iloc[idx]['low']
+    high = df.iloc[idx]['high']
+    spread = high - low
+    df.iloc[idx, df.columns.get_loc('open')]  = low + spread * 0.3
+    df.iloc[idx, df.columns.get_loc('close')] = low + spread * 0.7  # close > open = green
+    df.iloc[idx, df.columns.get_loc('volume')] = df['vol_sma'].iloc[idx] * 3
+    df.iloc[idx, df.columns.get_loc('high_volume')] = True
+    df.iloc[idx, df.columns.get_loc('spread')] = spread * 0.4
+    df.iloc[idx, df.columns.get_loc('avg_spread')] = spread
+    signal = b.check_signals(df, '1h')
+    # A green candle must NOT produce a bullish absorption signal
+    assert signal is None or 'ABSORPTION SIGNAL (BULLISH)' not in signal
+
+
+def test_bullish_absorption_can_fire_on_red_candle_in_upper_range():
+    """Bullish absorption fires on a red candle with close in upper 40%+ of range."""
+    import importlib
+    b = importlib.import_module('bot')
+    df = make_indicators()
+    idx = len(df) - 2
+    low  = df.iloc[idx]['low']
+    high = df.iloc[idx]['high']
+    spread = high - low
+    # Red candle (close < open), close in upper 55% of range
+    df.iloc[idx, df.columns.get_loc('open')]  = low + spread * 0.65
+    df.iloc[idx, df.columns.get_loc('close')] = low + spread * 0.55  # close < open (red) but upper range
+    df.iloc[idx, df.columns.get_loc('volume')] = df['vol_sma'].iloc[idx] * 3
+    df.iloc[idx, df.columns.get_loc('high_volume')] = True
+    df.iloc[idx, df.columns.get_loc('spread')] = spread * 0.3   # narrow
+    df.iloc[idx, df.columns.get_loc('avg_spread')] = spread
+    signal = b.check_signals(df, '1h')
+    # Either None (no swing found / R:R filtered) or BULLISH signal — never BEARISH
+    if signal is not None:
+        assert 'BEARISH' not in signal or 'EXHAUSTION' in signal

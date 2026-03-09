@@ -179,29 +179,65 @@ def check_signals(df, interval):
     signal = None
     
     # --- 1. ABSORPTION ---
-    # Bullish Absorption
-    if (prev['high_volume'] and 
-        (prev['close'] > prev['open']) and
-        prev['spread'] < prev['avg_spread'] and 
-        trend == "BULLISH"):
-        
-        signal = "🟢 <b>ABSORPTION SIGNAL (BULLISH)</b>\n"
-        signal += f"Pair: {SYMBOL} | TF: {interval}\n"
-        signal += "Reason: High Volume rejection of lows.\n"
-        signal += f"Trend: {trend}\n"
-        signal += f"RSI: {prev['rsi']:.2f}"
+    atr = current['atr'] if not pd.isna(current['atr']) else prev['spread']
 
-    # Bearish Absorption
-    elif (prev['high_volume'] and 
-          (prev['close'] < prev['open']) and 
-          prev['spread'] < prev['avg_spread'] and 
+    cp_prev = close_position(prev['high'], prev['low'], prev['close'])
+
+    # Bullish Absorption: bearish/doji candle + close in upper 40%+ + high vol + narrow spread
+    if (prev['close'] <= prev['open'] and
+            cp_prev > 0.4 and
+            prev['high_volume'] and
+            prev['spread'] < prev['avg_spread'] and
+            trend == "BULLISH"):
+
+        lower_entry = min(prev['open'], prev['close'])
+        upper_entry = max(prev['open'], prev['close'])
+        swing_lows  = find_swing_lows(df, distance=5, atr_mult=0.5)
+        stop_price  = None
+        for sw_idx, price in swing_lows:
+            if sw_idx < len(df) - 2 and price < lower_entry:
+                stop_price = round(price - 0.5 * atr, 2)
+                break
+
+        rr = calculate_rr('bullish', lower_entry, upper_entry, stop_price, atr)
+        if rr:
+            signal = "🟢 <b>ABSORPTION SIGNAL (BULLISH)</b>\n"
+            signal += f"Pair: {SYMBOL} | TF: {interval}\n"
+            signal += "Reason: High Volume Absorption (Bearish Bar, Close Mid)\n"
+            signal += f"Trend: {trend}\n\n"
+            signal += f"📍 Entry Zone : {rr['entry_low']:,.0f} – {rr['entry_high']:,.0f}\n"
+            signal += f"🛑 Stop Loss  : {rr['stop']:,.0f} (Swing Low)\n"
+            signal += f"🎯 T1         : {rr['t1']:,.0f} (1.5R)\n"
+            signal += f"🎯 T2         : {rr['t2']:,.0f} (3.0R)\n"
+            signal += f"📊 RSI        : {prev['rsi']:.2f}"
+
+    # Bearish Absorption: bullish/doji candle + close in lower 40%+ + high vol + narrow spread
+    elif (prev['close'] >= prev['open'] and
+          cp_prev < 0.6 and
+          prev['high_volume'] and
+          prev['spread'] < prev['avg_spread'] and
           trend == "BEARISH"):
-          
-        signal = "🔴 <b>ABSORPTION SIGNAL (BEARISH)</b>\n"
-        signal += f"Pair: {SYMBOL} | TF: {interval}\n"
-        signal += "Reason: High Volume rejection of highs.\n"
-        signal += f"Trend: {trend}\n"
-        signal += f"RSI: {prev['rsi']:.2f}"
+
+        lower_entry = min(prev['open'], prev['close'])
+        upper_entry = max(prev['open'], prev['close'])
+        swing_highs = find_swing_highs(df, distance=5, atr_mult=0.5)
+        stop_price  = None
+        for sw_idx, price in swing_highs:
+            if sw_idx < len(df) - 2 and price > upper_entry:
+                stop_price = round(price + 0.5 * atr, 2)
+                break
+
+        rr = calculate_rr('bearish', lower_entry, upper_entry, stop_price, atr)
+        if rr:
+            signal = "🔴 <b>ABSORPTION SIGNAL (BEARISH)</b>\n"
+            signal += f"Pair: {SYMBOL} | TF: {interval}\n"
+            signal += "Reason: High Volume Absorption (Bullish Bar, Close Mid)\n"
+            signal += f"Trend: {trend}\n\n"
+            signal += f"📍 Entry Zone : {rr['entry_low']:,.0f} – {rr['entry_high']:,.0f}\n"
+            signal += f"🛑 Stop Loss  : {rr['stop']:,.0f} (Swing High)\n"
+            signal += f"🎯 T1         : {rr['t1']:,.0f} (1.5R)\n"
+            signal += f"🎯 T2         : {rr['t2']:,.0f} (3.0R)\n"
+            signal += f"📊 RSI        : {prev['rsi']:.2f}"
 
     # --- 2. EXHAUSTION ---
     # Bullish Exhaustion (Selling Climax)
