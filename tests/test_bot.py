@@ -88,3 +88,17 @@ def test_find_swing_lows_returns_empty_on_flat():
     df['spread'] = df['high'] - df['low']
     lows = find_swing_lows(df, distance=3, atr_mult=0.5)
     assert lows == []
+
+
+def test_find_swing_highs_returns_empty_on_flat():
+    """Completely flat price → no significant swing highs."""
+    df = pd.DataFrame({
+        'high':   [100.0] * 50,
+        'low':    [100.0] * 50,
+        'close':  [100.0] * 50,
+        'open':   [100.0] * 50,
+        'volume': [500.0] * 50,
+    })
+    df['spread'] = df['high'] - df['low']
+    highs = find_swing_highs(df, distance=3, atr_mult=0.5)
+    assert highs == []
