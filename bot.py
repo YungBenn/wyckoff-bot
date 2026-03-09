@@ -83,6 +83,45 @@ def find_swing_highs(df, distance=5, atr_mult=0.5):
     return [(int(i), float(highs[i])) for i in sorted(peaks, reverse=True)]
 
 
+def calculate_rr(direction, lower_entry, upper_entry, stop, atr):
+    """Calculate entry zone, stop, and R:R targets.
+
+    Returns dict with keys: entry_low, entry_high, stop, t1, t2
+    Returns None if stop is missing or risk is too wide (> 3 × ATR).
+    """
+    if stop is None:
+        return None
+
+    entry_mid = (lower_entry + upper_entry) / 2
+
+    if direction == 'bullish':
+        risk = lower_entry - stop          # worst-case entry
+        if risk <= 0:
+            return None
+    else:
+        risk = stop - upper_entry          # worst-case entry
+        if risk <= 0:
+            return None
+
+    if risk > 3 * atr:
+        return None                        # stop too wide for current volatility
+
+    if direction == 'bullish':
+        t1 = entry_mid + 1.5 * risk
+        t2 = entry_mid + 3.0 * risk
+    else:
+        t1 = entry_mid - 1.5 * risk
+        t2 = entry_mid - 3.0 * risk
+
+    return {
+        'entry_low':  lower_entry,
+        'entry_high': upper_entry,
+        'stop':       stop,
+        't1':         t1,
+        't2':         t2,
+    }
+
+
 def get_data(client, symbol, interval):
     """Fetches candles and computes indicators."""
     try:
@@ -102,13 +141,14 @@ def get_data(client, symbol, interval):
         df['ema_200'] = calculate_ema(df['close'], 200)
         df['ema_50'] = calculate_ema(df['close'], 50)
         df['vol_sma'] = df['volume'].rolling(window=20).mean()
-        
+
         # Volume Profile Logic
         df['high_volume'] = df['volume'] > (df['vol_sma'] * 2.0)
-        
+
         # Spread Analysis
         df['spread'] = df['high'] - df['low']
         df['avg_spread'] = df['spread'].rolling(window=20).mean()
+        df['atr'] = df['spread'].rolling(window=14).mean()
         
         # Divergence Helpers
         df['price_high'] = df['high'].rolling(5).max()
