@@ -2,7 +2,7 @@
 import pandas as pd
 import numpy as np
 import pytest
-from bot import close_position
+from bot import close_position, find_swing_lows, find_swing_highs
 
 
 def make_df(n=100):
@@ -43,3 +43,48 @@ def test_close_position_at_middle():
 
 def test_close_position_zero_spread():
     assert close_position(high=100, low=100, close=100) == pytest.approx(0.5)
+
+
+def test_find_swing_lows_detects_valley():
+    """A clear V-shape should produce one swing low."""
+    df = make_df(60)
+    # Force a clear valley at index 30
+    df.loc[30, 'low'] = df['low'].min() - 500
+    df.loc[30, 'high'] = df.loc[30, 'low'] + 10
+    df.loc[30, 'close'] = df.loc[30, 'low'] + 5
+    df.loc[30, 'open'] = df.loc[30, 'low'] + 5
+    df['spread'] = df['high'] - df['low']
+
+    lows = find_swing_lows(df, distance=3, atr_mult=0.3)
+    prices = [p for _, p in lows]
+    assert len(prices) > 0
+    assert min(prices) <= df.loc[30, 'low'] + 1
+
+
+def test_find_swing_highs_detects_peak():
+    """A clear inverted-V shape should produce one swing high."""
+    df = make_df(60)
+    df.loc[30, 'high'] = df['high'].max() + 500
+    df.loc[30, 'low'] = df.loc[30, 'high'] - 10
+    df.loc[30, 'close'] = df.loc[30, 'high'] - 5
+    df.loc[30, 'open'] = df.loc[30, 'high'] - 5
+    df['spread'] = df['high'] - df['low']
+
+    highs = find_swing_highs(df, distance=3, atr_mult=0.3)
+    prices = [p for _, p in highs]
+    assert len(prices) > 0
+    assert max(prices) >= df.loc[30, 'high'] - 1
+
+
+def test_find_swing_lows_returns_empty_on_flat():
+    """Completely flat price → no significant swings."""
+    df = pd.DataFrame({
+        'high':   [100.0] * 50,
+        'low':    [100.0] * 50,
+        'close':  [100.0] * 50,
+        'open':   [100.0] * 50,
+        'volume': [500.0] * 50,
+    })
+    df['spread'] = df['high'] - df['low']
+    lows = find_swing_lows(df, distance=3, atr_mult=0.5)
+    assert lows == []

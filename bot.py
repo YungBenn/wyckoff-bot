@@ -4,6 +4,7 @@ import pandas as pd
 import requests
 from binance.client import Client
 from dotenv import load_dotenv
+from scipy.signal import find_peaks
 
 # ================= LOAD ENVIRONMENT VARIABLES =================
 load_dotenv()  # Load variables from .env file
@@ -49,6 +50,38 @@ def close_position(high, low, close):
     if spread == 0:
         return 0.5
     return (close - low) / spread
+
+def find_swing_lows(df, distance=5, atr_mult=0.5):
+    """Find swing lows using scipy find_peaks on inverted low series.
+
+    Returns list of (index, price) tuples, most recent first.
+    """
+    atr = df['spread'].rolling(14).mean().iloc[-1]
+    if pd.isna(atr) or atr == 0:
+        return []
+    prominence = atr * atr_mult
+    lows = df['low'].values
+    peaks, _ = find_peaks(-lows, distance=distance, prominence=prominence)
+    if len(peaks) == 0:
+        return []
+    return [(int(i), float(lows[i])) for i in sorted(peaks, reverse=True)]
+
+
+def find_swing_highs(df, distance=5, atr_mult=0.5):
+    """Find swing highs using scipy find_peaks on high series.
+
+    Returns list of (index, price) tuples, most recent first.
+    """
+    atr = df['spread'].rolling(14).mean().iloc[-1]
+    if pd.isna(atr) or atr == 0:
+        return []
+    prominence = atr * atr_mult
+    highs = df['high'].values
+    peaks, _ = find_peaks(highs, distance=distance, prominence=prominence)
+    if len(peaks) == 0:
+        return []
+    return [(int(i), float(highs[i])) for i in sorted(peaks, reverse=True)]
+
 
 def get_data(client, symbol, interval):
     """Fetches candles and computes indicators."""
