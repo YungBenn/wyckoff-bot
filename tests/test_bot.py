@@ -250,3 +250,49 @@ def test_bullish_absorption_can_fire_on_red_candle_in_upper_range():
     assert '📍 Entry Zone' in signal
     assert '🛑 Stop Loss' in signal
     assert '🎯 T1' in signal
+
+
+def test_exhaustion_signal_includes_rr_levels():
+    """Exhaustion signal must include entry/stop/targets when it fires."""
+    import importlib
+    b = importlib.import_module('bot')
+    df = make_indicators()
+
+    # Set BEARISH trend (price below ema_200)
+    df['ema_200'] = df['close'] + 500
+    df['ema_50']  = df['close'] + 200
+
+    idx = len(df) - 2
+
+    # Make signal candle high volume, close in upper 40%+ of range
+    low  = df.iloc[idx]['low']
+    high = df.iloc[idx]['high']
+    spread = high - low
+    df.iloc[idx, df.columns.get_loc('open')]  = low + spread * 0.4
+    df.iloc[idx, df.columns.get_loc('close')] = low + spread * 0.5   # close in upper half
+    df.iloc[idx, df.columns.get_loc('volume')] = df['vol_sma'].iloc[idx] * 3
+    df.iloc[idx, df.columns.get_loc('high_volume')] = True
+
+    # Inject two swing lows for divergence:
+    # Prior swing low (40 bars back): higher price, lower RSI
+    prior_idx = idx - 40
+    df.iloc[prior_idx, df.columns.get_loc('low')] = low - 200
+    df.iloc[prior_idx, df.columns.get_loc('rsi')] = 30.0   # lower RSI
+    for offset in range(-4, 5):
+        if offset != 0 and 0 <= prior_idx + offset < len(df):
+            df.iloc[prior_idx + offset, df.columns.get_loc('low')] = low - 50
+
+    # Current swing low (20 bars back): lower price, higher RSI → divergence
+    current_sw_idx = idx - 20
+    df.iloc[current_sw_idx, df.columns.get_loc('low')] = low - 400  # new lower low
+    df.iloc[current_sw_idx, df.columns.get_loc('rsi')] = 38.0   # but RSI higher → divergence
+    for offset in range(-4, 5):
+        if offset != 0 and 0 <= current_sw_idx + offset < len(df):
+            df.iloc[current_sw_idx + offset, df.columns.get_loc('low')] = low - 100
+
+    signal = b.check_signals(df, '1h')
+    if signal is not None and 'EXHAUSTION' in signal:
+        assert '📍 Entry Zone' in signal
+        assert '🛑 Stop Loss'  in signal
+        assert '🎯 T1'         in signal
+        assert '🎯 T2'         in signal

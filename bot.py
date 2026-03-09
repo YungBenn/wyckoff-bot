@@ -240,30 +240,73 @@ def check_signals(df, interval):
             signal += f"📊 RSI        : {prev['rsi']:.2f}"
 
     # --- 2. EXHAUSTION ---
-    # Bullish Exhaustion (Selling Climax)
-    if (signal is None and
-        trend == "BEARISH" and
-        prev['high_volume'] and 
-        prev['low'] < df.iloc[-6]['price_low'] and 
-        prev['rsi'] > df.iloc[-6]['rsi_low']):
-        
-        signal = "🚀 <b>EXHAUSTION SIGNAL (REVERSAL UP)</b>\n"
-        signal += f"Pair: {SYMBOL} | TF: {interval}\n"
-        signal += "Reason: Selling Climax + RSI Divergence.\n"
-        signal += f"Trend: {trend}\n"
-        signal += f"RSI: {prev['rsi']:.2f}"
+    cp_prev = close_position(prev['high'], prev['low'], prev['close'])
 
-    # Bearish Exhaustion (Buying Climax)
-    elif (trend == "BULLISH" and 
-          prev['high_volume'] and 
-          prev['high'] > df.iloc[-6]['price_high'] and 
-          prev['rsi'] < df.iloc[-6]['rsi_high']):
-          
-        signal = "⚠️ <b>EXHAUSTION SIGNAL (REVERSAL DOWN)</b>\n"
-        signal += f"Pair: {SYMBOL} | TF: {interval}\n"
-        signal += "Reason: Buying Climax + RSI Divergence.\n"
-        signal += f"Trend: {trend}\n"
-        signal += f"RSI: {prev['rsi']:.2f}"
+    # Bullish Exhaustion (Selling Climax): new swing low + RSI divergence + close not at bottom
+    swing_lows = find_swing_lows(df, distance=5, atr_mult=0.5)
+    if (signal is None and
+            trend == "BEARISH" and
+            prev['high_volume'] and
+            cp_prev > 0.3 and
+            len(swing_lows) >= 2):
+
+        current_sw_idx, current_sw_price = swing_lows[0]
+        prior_sw_idx,   prior_sw_price   = swing_lows[1]
+
+        prior_rsi   = df.iloc[prior_sw_idx]['rsi']
+        current_rsi = prev['rsi']
+
+        if (current_sw_price < prior_sw_price and    # new lower low
+                current_rsi > prior_rsi):             # but RSI higher → bullish divergence
+
+            lower_entry = min(prev['open'], prev['close'])
+            upper_entry = max(prev['open'], prev['close'])
+            stop_price  = round(current_sw_price - 0.5 * atr, 2)
+
+            rr = calculate_rr('bullish', lower_entry, upper_entry, stop_price, atr)
+            if rr:
+                signal = "🚀 <b>EXHAUSTION SIGNAL (REVERSAL UP)</b>\n"
+                signal += f"Pair: {SYMBOL} | TF: {interval}\n"
+                signal += "Reason: Selling Climax + RSI Divergence\n"
+                signal += f"Trend: {trend}\n\n"
+                signal += f"📍 Entry Zone : {rr['entry_low']:,.0f} – {rr['entry_high']:,.0f}\n"
+                signal += f"🛑 Stop Loss  : {rr['stop']:,.0f} (Swing Low)\n"
+                signal += f"🎯 T1         : {rr['t1']:,.0f} (1.5R)\n"
+                signal += f"🎯 T2         : {rr['t2']:,.0f} (3.0R)\n"
+                signal += f"📊 RSI        : {current_rsi:.2f}"
+
+    # Bearish Exhaustion (Buying Climax): new swing high + RSI divergence + close not at top
+    swing_highs = find_swing_highs(df, distance=5, atr_mult=0.5)
+    if (signal is None and
+            trend == "BULLISH" and
+            prev['high_volume'] and
+            cp_prev < 0.7 and
+            len(swing_highs) >= 2):
+
+        current_sw_idx, current_sw_price = swing_highs[0]
+        prior_sw_idx,   prior_sw_price   = swing_highs[1]
+
+        prior_rsi   = df.iloc[prior_sw_idx]['rsi']
+        current_rsi = prev['rsi']
+
+        if (current_sw_price > prior_sw_price and    # new higher high
+                current_rsi < prior_rsi):             # but RSI lower → bearish divergence
+
+            lower_entry = min(prev['open'], prev['close'])
+            upper_entry = max(prev['open'], prev['close'])
+            stop_price  = round(current_sw_price + 0.5 * atr, 2)
+
+            rr = calculate_rr('bearish', lower_entry, upper_entry, stop_price, atr)
+            if rr:
+                signal = "⚠️ <b>EXHAUSTION SIGNAL (REVERSAL DOWN)</b>\n"
+                signal += f"Pair: {SYMBOL} | TF: {interval}\n"
+                signal += "Reason: Buying Climax + RSI Divergence\n"
+                signal += f"Trend: {trend}\n\n"
+                signal += f"📍 Entry Zone : {rr['entry_low']:,.0f} – {rr['entry_high']:,.0f}\n"
+                signal += f"🛑 Stop Loss  : {rr['stop']:,.0f} (Swing High)\n"
+                signal += f"🎯 T1         : {rr['t1']:,.0f} (1.5R)\n"
+                signal += f"🎯 T2         : {rr['t2']:,.0f} (3.0R)\n"
+                signal += f"📊 RSI        : {current_rsi:.2f}"
 
     return signal
 
