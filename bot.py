@@ -149,13 +149,7 @@ def get_data(client, symbol, interval):
         df['spread'] = df['high'] - df['low']
         df['avg_spread'] = df['spread'].rolling(window=20).mean()
         df['atr'] = df['spread'].rolling(window=14).mean()
-        
-        # Divergence Helpers
-        df['price_high'] = df['high'].rolling(5).max()
-        df['price_low'] = df['low'].rolling(5).min()
-        df['rsi_high'] = df['rsi'].rolling(5).max()
-        df['rsi_low'] = df['rsi'].rolling(5).min()
-        
+
         return df
     except Exception as e:
         print(f"Error fetching data: {e}")
