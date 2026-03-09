@@ -24,6 +24,9 @@ source .venv/bin/activate
 pip install -r requirements.txt
 python bot.py
 
+# Tests
+pytest tests/ -v
+
 # Docker
 docker build -t wyckoff_bot .
 docker run --env-file .env wyckoff_bot
@@ -36,10 +39,18 @@ All logic lives in `bot.py`. The main loop runs every 10 seconds and iterates ov
 **Data flow:** `get_data()` → fetches 500 Binance klines, computes RSI/EMA50/EMA200/VolumeSMA → `check_signals()` → `send_telegram_message()`
 
 **Signal logic in `check_signals()`:**
-- **Absorption**: High volume + narrow spread candle, aligned with EMA trend (bullish if above EMA200 with EMA50 > EMA200, bearish if below)
-- **Exhaustion**: Price makes new high/low while RSI diverges (Selling/Buying Climax), requires high volume
+- **Absorption**: High volume + narrow spread + **bearish candle** (VSA: smart money absorbs sellers) + close in upper 40%+ of candle range + BULLISH trend. Bearish absorption is the mirror. Old bug: code had candle direction inverted (green=bullish) — now fixed.
+- **Exhaustion**: Confirmed swing low/high via `find_swing_lows`/`find_swing_highs` (scipy) + RSI divergence compared at the actual prior swing index (not `df.iloc[-6]`).
+- **Every signal includes**: Entry Zone (candle body), Stop Loss (nearest swing ± 0.5×ATR), T1 (1.5R), T2 (3.0R).
+- **Quality filter**: Signal skipped if `risk > 3 × ATR` (structurally too wide for current volatility).
 
 **Cooldown**: 60s for `1m` TF, 300s for all others (tracked via `last_signal_time` dict).
+
+**Helper functions (pure, testable):**
+- `close_position(high, low, close)` — returns 0.0–1.0 where close sits in the candle range
+- `find_swing_lows(df, distance=5, atr_mult=0.5)` — scipy find_peaks on inverted lows, ATR-based prominence
+- `find_swing_highs(df, distance=5, atr_mult=0.5)` — scipy find_peaks on highs
+- `calculate_rr(direction, lower_entry, upper_entry, stop, atr)` — returns entry/stop/T1/T2 dict or None
 
 ## Dependencies
 
@@ -47,5 +58,28 @@ All logic lives in `bot.py`. The main loop runs every 10 seconds and iterates ov
 - `pandas` — all indicator calculations (RSI, EMA, rolling stats)
 - `requests` — Telegram HTTP calls
 - `python-dotenv` — `.env` loading
+- `scipy` — swing high/low detection via `scipy.signal.find_peaks`
+- `pytest` — test suite
 
 The `.venv` uses Python 3.14; Dockerfile uses Python 3.11-slim for deployment.
+
+## Testing
+
+Tests live in `tests/test_bot.py`. `tests/conftest.py` patches the required env vars so `bot.py` can be imported without a real `.env`.
+
+When writing new tests that call `check_signals()` or other signal logic:
+- Use `make_indicators(n=300)` for a full indicator DataFrame
+- For swing detection tests, **set absolute prices on a flat baseline** rather than relative offsets from random data — `find_peaks` prominence depends on surrounding bars, so random drift can make injected valleys undetectable
+- Always use unconditional assertions (`assert signal is not None`) in positive-path tests; conditional gates (`if signal is not None`) make tests pass trivially when logic is broken
+
+## Project Structure
+
+```
+bot.py              # all production logic
+requirements.txt
+Dockerfile
+tests/
+  conftest.py       # env var patching for test imports
+  test_bot.py       # unit tests for helpers + signal logic
+docs/plans/         # design docs and implementation plans
+```
