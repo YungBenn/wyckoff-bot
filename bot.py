@@ -250,8 +250,8 @@ def check_signals(df, interval):
             cp_prev > 0.3 and
             len(swing_lows) >= 2):
 
-        current_sw_idx, current_sw_price = swing_lows[0]
-        prior_sw_idx,   prior_sw_price   = swing_lows[1]
+        _, current_sw_price = swing_lows[0]
+        prior_sw_idx, prior_sw_price = swing_lows[1]
 
         prior_rsi   = df.iloc[prior_sw_idx]['rsi']
         current_rsi = prev['rsi']
@@ -283,8 +283,8 @@ def check_signals(df, interval):
             cp_prev < 0.7 and
             len(swing_highs) >= 2):
 
-        current_sw_idx, current_sw_price = swing_highs[0]
-        prior_sw_idx,   prior_sw_price   = swing_highs[1]
+        _, current_sw_price = swing_highs[0]
+        prior_sw_idx, prior_sw_price = swing_highs[1]
 
         prior_rsi   = df.iloc[prior_sw_idx]['rsi']
         current_rsi = prev['rsi']
