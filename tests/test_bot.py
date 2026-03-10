@@ -2,7 +2,6 @@
 import pandas as pd
 import numpy as np
 import pytest
-import unittest.mock as m
 from bot import close_position, find_swing_lows, find_swing_highs, calculate_rr
 
 ENV = {
@@ -13,14 +12,14 @@ ENV = {
 
 def make_df(n=100):
     """Create a minimal OHLCV DataFrame for testing."""
-    np.random.seed(42)
-    close = 65000 + np.cumsum(np.random.randn(n) * 100)
+    rng = np.random.default_rng(42)
+    close = 65000 + np.cumsum(rng.standard_normal(n) * 100)
     df = pd.DataFrame({
-        'open':   close + np.random.randn(n) * 50,
-        'high':   close + abs(np.random.randn(n) * 150),
-        'low':    close - abs(np.random.randn(n) * 150),
+        'open':   close + rng.standard_normal(n) * 50,
+        'high':   close + abs(rng.standard_normal(n) * 150),
+        'low':    close - abs(rng.standard_normal(n) * 150),
         'close':  close,
-        'volume': np.random.uniform(100, 1000, n),
+        'volume': rng.uniform(100, 1000, n),
     })
     # Ensure high >= max(open, close) and low <= min(open, close)
     df['high'] = df[['open', 'close', 'high']].max(axis=1)
@@ -168,15 +167,14 @@ def test_calculate_rr_skip_when_stop_is_none():
 
 def make_indicators(n=300):
     """Full DataFrame with all indicators bot.py expects."""
-    import numpy as np
-    np.random.seed(0)
-    close = 65000 + np.cumsum(np.random.randn(n) * 100)
+    rng = np.random.default_rng(0)
+    close = 65000 + np.cumsum(rng.standard_normal(n) * 100)
     df = pd.DataFrame({
-        'open':   close + np.random.randn(n) * 30,
-        'high':   close + abs(np.random.randn(n) * 100),
-        'low':    close - abs(np.random.randn(n) * 100),
+        'open':   close + rng.standard_normal(n) * 30,
+        'high':   close + abs(rng.standard_normal(n) * 100),
+        'low':    close - abs(rng.standard_normal(n) * 100),
         'close':  close,
-        'volume': np.random.uniform(100, 1000, n),
+        'volume': rng.uniform(100, 1000, n),
     })
     df['high'] = df[['open', 'close', 'high']].max(axis=1)
     df['low']  = df[['open', 'close', 'low']].min(axis=1)
@@ -206,7 +204,7 @@ def test_bullish_absorption_must_not_fire_on_green_candle():
     high = df.iloc[idx]['high']
     spread = high - low
     df.iloc[idx, df.columns.get_loc('open')]  = low + spread * 0.3
-    df.iloc[idx, df.columns.get_loc('close')] = low + spread * 0.7  # close > open = green
+    df.iloc[idx, df.columns.get_loc('close')] = low + spread * 0.7
     df.iloc[idx, df.columns.get_loc('volume')] = df['vol_sma'].iloc[idx] * 3
     df.iloc[idx, df.columns.get_loc('high_volume')] = True
     df.iloc[idx, df.columns.get_loc('spread')] = spread * 0.4
