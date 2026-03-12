@@ -83,42 +83,44 @@ def find_swing_highs(df, distance=5, atr_mult=0.5):
     return [(int(i), float(highs[i])) for i in sorted(peaks, reverse=True)]
 
 
-def calculate_rr(direction, lower_entry, upper_entry, stop, atr):
-    """Calculate entry zone, stop, and R:R targets.
+def calculate_rr(direction, lower_entry, upper_entry, stop, atr, t1=None, t2=None):
+    """Calculate entry zone, stop, and structural R:R targets.
 
-    Returns dict with keys: entry_low, entry_high, stop, t1, t2
-    Returns None if stop is missing or risk is too wide (> 3 × ATR).
+    t1/t2 are structural price levels (swing highs for bullish, swing lows for bearish).
+    Returns None if stop missing, risk too wide (> 3×ATR), no t1, or t1 gives < 1.0R.
     """
-    if stop is None:
+    if stop is None or t1 is None:
         return None
 
     entry_mid = (lower_entry + upper_entry) / 2
 
     if direction == 'bullish':
-        risk = lower_entry - stop          # worst-case entry
+        risk = lower_entry - stop
         if risk <= 0:
             return None
+        t1_rr = (t1 - entry_mid) / risk
+        t2_rr = (t2 - entry_mid) / risk if t2 is not None else None
     else:
-        risk = stop - upper_entry          # worst-case entry
+        risk = stop - upper_entry
         if risk <= 0:
             return None
+        t1_rr = (entry_mid - t1) / risk
+        t2_rr = (entry_mid - t2) / risk if t2 is not None else None
 
     if risk > 3 * atr:
-        return None                        # stop too wide for current volatility
+        return None
 
-    if direction == 'bullish':
-        t1 = entry_mid + 1.5 * risk
-        t2 = entry_mid + 3.0 * risk
-    else:
-        t1 = entry_mid - 1.5 * risk
-        t2 = entry_mid - 3.0 * risk
+    if t1_rr < 1.0:
+        return None
 
     return {
         'entry_low':  lower_entry,
         'entry_high': upper_entry,
         'stop':       stop,
         't1':         t1,
+        't1_rr':      t1_rr,
         't2':         t2,
+        't2_rr':      t2_rr,
     }
 
 

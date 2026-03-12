@@ -109,47 +109,100 @@ def test_find_swing_highs_returns_empty_on_flat():
     assert highs == []
 
 
-def test_calculate_rr_bullish():
+def test_calculate_rr_bullish_structural_target():
+    # T1 swing high above entry gives 2.3R → signal fires
     result = calculate_rr(
         direction='bullish',
         lower_entry=65000,
         upper_entry=65500,
         stop=63800,
-        atr=500,  # risk=1200, 3×ATR=1500 → passes filter
+        atr=500,
+        t1=67900,   # (67900 - 65250) / (65000 - 63800) = 2166/1200 ≈ 1.8R
+        t2=69500,
     )
     assert result is not None
-    entry_mid = (65000 + 65500) / 2
-    risk = 65000 - 63800  # worst-case entry (lower edge minus stop)
+    entry_mid = (65000 + 65500) / 2   # 65250
+    risk = 65000 - 63800              # 1200
+    t1_rr = (67900 - entry_mid) / risk
+    t2_rr = (69500 - entry_mid) / risk
     assert result['entry_low']  == 65000
     assert result['entry_high'] == 65500
     assert result['stop']       == 63800
-    assert result['t1'] == pytest.approx(entry_mid + 1.5 * risk)
-    assert result['t2'] == pytest.approx(entry_mid + 3.0 * risk)
+    assert result['t1']         == 67900
+    assert result['t1_rr']      == pytest.approx(t1_rr)
+    assert result['t2']         == 69500
+    assert result['t2_rr']      == pytest.approx(t2_rr)
 
 
-def test_calculate_rr_bearish():
+def test_calculate_rr_bearish_structural_target():
     result = calculate_rr(
         direction='bearish',
         lower_entry=64500,
         upper_entry=65000,
         stop=66200,
-        atr=500,  # risk=1200, 3×ATR=1500 → passes filter
+        atr=500,
+        t1=63200,   # below lower_entry
+        t2=61500,
     )
     assert result is not None
-    entry_mid = (64500 + 65000) / 2
-    risk = 66200 - 65000  # worst-case entry (stop minus upper edge)
-    assert result['t1'] == pytest.approx(entry_mid - 1.5 * risk)
-    assert result['t2'] == pytest.approx(entry_mid - 3.0 * risk)
+    entry_mid = (64500 + 65000) / 2   # 64750
+    risk = 66200 - 65000              # 1200
+    t1_rr = (entry_mid - 63200) / risk
+    t2_rr = (entry_mid - 61500) / risk
+    assert result['t1_rr'] == pytest.approx(t1_rr)
+    assert result['t2_rr'] == pytest.approx(t2_rr)
+
+
+def test_calculate_rr_skip_when_no_t1():
+    result = calculate_rr(
+        direction='bullish',
+        lower_entry=65000,
+        upper_entry=65500,
+        stop=63800,
+        atr=500,
+        t1=None,
+    )
+    assert result is None
+
+
+def test_calculate_rr_skip_when_t1_too_close():
+    # T1 at 65800 → (65800 - 65250) / 1200 = 0.46R < 1.0 → skip
+    result = calculate_rr(
+        direction='bullish',
+        lower_entry=65000,
+        upper_entry=65500,
+        stop=63800,
+        atr=500,
+        t1=65800,
+    )
+    assert result is None
+
+
+def test_calculate_rr_fires_with_t1_only_no_t2():
+    # T2 not provided → signal fires, t2 fields are None
+    result = calculate_rr(
+        direction='bullish',
+        lower_entry=65000,
+        upper_entry=65500,
+        stop=63800,
+        atr=500,
+        t1=67900,
+        t2=None,
+    )
+    assert result is not None
+    assert result['t2']    is None
+    assert result['t2_rr'] is None
 
 
 def test_calculate_rr_skip_when_risk_too_wide():
-    # risk = 65000 - 61000 = 4000, ATR = 300, 3×ATR = 900 → skip
+    # risk = 65000 - 61000 = 4000, 3×ATR = 900 → skip
     result = calculate_rr(
         direction='bullish',
         lower_entry=65000,
         upper_entry=65500,
         stop=61000,
         atr=300,
+        t1=67900,
     )
     assert result is None
 
@@ -160,7 +213,8 @@ def test_calculate_rr_skip_when_stop_is_none():
         lower_entry=65000,
         upper_entry=65500,
         stop=None,
-        atr=300,
+        atr=500,
+        t1=67900,
     )
     assert result is None
 
