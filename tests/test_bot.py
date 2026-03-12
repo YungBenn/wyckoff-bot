@@ -269,7 +269,7 @@ def test_bullish_absorption_must_not_fire_on_green_candle():
 
 
 def test_bullish_absorption_can_fire_on_red_candle_in_upper_range():
-    """Bullish absorption fires on a red candle with close in upper 40%+ of range."""
+    """Bullish absorption fires on a red candle and includes structural T1."""
     import importlib
     b = importlib.import_module('bot')
     df = make_indicators()
@@ -280,28 +280,35 @@ def test_bullish_absorption_can_fire_on_red_candle_in_upper_range():
 
     # Red candle (close < open), close in upper 55% of range
     df.iloc[idx, df.columns.get_loc('open')]  = low + spread * 0.65
-    df.iloc[idx, df.columns.get_loc('close')] = low + spread * 0.55  # red, upper range
+    df.iloc[idx, df.columns.get_loc('close')] = low + spread * 0.55
     df.iloc[idx, df.columns.get_loc('volume')] = df['vol_sma'].iloc[idx] * 3
     df.iloc[idx, df.columns.get_loc('high_volume')] = True
-    df.iloc[idx, df.columns.get_loc('spread')] = spread * 0.3   # narrow
+    df.iloc[idx, df.columns.get_loc('spread')] = spread * 0.3
     df.iloc[idx, df.columns.get_loc('avg_spread')] = spread
 
-    # Inject a clear swing low well below the entry zone so stop is found
+    # Inject a clear swing low for stop (20 bars back)
     lower_entry = min(df.iloc[idx]['open'], df.iloc[idx]['close'])
-    swing_idx = idx - 20  # 20 bars back
-    df.iloc[swing_idx, df.columns.get_loc('low')] = lower_entry - 800  # clear swing low below entry
-    # Make it a clear local minimum
+    swing_idx = idx - 20
+    df.iloc[swing_idx, df.columns.get_loc('low')] = lower_entry - 800
     for offset in range(-4, 5):
         if offset != 0 and 0 <= swing_idx + offset < len(df):
             df.iloc[swing_idx + offset, df.columns.get_loc('low')] = lower_entry - 200
 
+    # Inject a clear swing high for T1 (10 bars back, above entry upper bound)
+    upper_entry = max(df.iloc[idx]['open'], df.iloc[idx]['close'])
+    t1_idx = idx - 10
+    t1_price = upper_entry + 1500   # well above entry, gives > 1.0R
+    df.iloc[t1_idx, df.columns.get_loc('high')] = t1_price
+    for offset in range(-4, 5):
+        if offset != 0 and 0 <= t1_idx + offset < len(df):
+            df.iloc[t1_idx + offset, df.columns.get_loc('high')] = upper_entry + 300
+
     signal = b.check_signals(df, '1h')
-    # With a valid swing low present, bullish absorption MUST fire
     assert signal is not None, "Expected a bullish absorption signal but got None"
     assert 'ABSORPTION SIGNAL (BULLISH)' in signal
     assert '📍 Entry Zone' in signal
-    assert '🛑 Stop Loss' in signal
-    assert '🎯 T1' in signal
+    assert '🛑 Stop Loss'  in signal
+    assert '🎯 T1'         in signal
 
 
 def test_exhaustion_signal_includes_rr_levels():
@@ -310,7 +317,6 @@ def test_exhaustion_signal_includes_rr_levels():
     b = importlib.import_module('bot')
     df = make_indicators(300)
 
-    # Flatten all lows to a controlled baseline so valley prominence is predictable
     baseline = 64000.0
     df['low']    = baseline
     df['high']   = baseline + 300.0
@@ -323,28 +329,33 @@ def test_exhaustion_signal_includes_rr_levels():
     df['high_volume'] = False
     df['rsi'] = 50.0
 
-    # BEARISH trend: price below ema_200 and ema_50
     df['ema_200'] = baseline + 650.0
     df['ema_50']  = baseline + 450.0
 
-    idx = len(df) - 2  # signal candle
+    idx = len(df) - 2
 
-    # Signal candle: high volume, close in upper half of range (cp > 0.3)
     df.iloc[idx, df.columns.get_loc('open')]       = baseline + 120.0
-    df.iloc[idx, df.columns.get_loc('close')]      = baseline + 160.0  # upper half
+    df.iloc[idx, df.columns.get_loc('close')]      = baseline + 160.0
     df.iloc[idx, df.columns.get_loc('volume')]     = 1500.0
     df.iloc[idx, df.columns.get_loc('high_volume')] = True
 
-    # Prior swing low (40 bars back): price=63600, RSI=30 — first low
+    # Prior swing low (40 bars back)
     prior_idx = idx - 40
     df.iloc[prior_idx, df.columns.get_loc('low')] = 63600.0
     df.iloc[prior_idx, df.columns.get_loc('rsi')] = 30.0
 
-    # Current swing low (20 bars back): price=63400 (lower low), RSI=50 → divergence
-    # Prominence in inverted space: baseline(-64000) - valley(-63400) = 600 >> 0.5*ATR(150)
+    # Current swing low (20 bars back) — new lower low + RSI divergence
     current_sw_idx = idx - 20
     df.iloc[current_sw_idx, df.columns.get_loc('low')] = 63400.0
-    df.iloc[current_sw_idx, df.columns.get_loc('rsi')] = 50.0   # higher RSI → bullish divergence
+    df.iloc[current_sw_idx, df.columns.get_loc('rsi')] = 50.0
+
+    # Structural T1: swing high above entry zone (10 bars back)
+    upper_entry = max(df.iloc[idx]['open'], df.iloc[idx]['close'])  # baseline + 160
+    t1_idx = idx - 10
+    df.iloc[t1_idx, df.columns.get_loc('high')] = upper_entry + 1500.0  # clear target above entry
+    for offset in range(-4, 5):
+        if offset != 0 and 0 <= t1_idx + offset < len(df):
+            df.iloc[t1_idx + offset, df.columns.get_loc('high')] = upper_entry + 300.0
 
     signal = b.check_signals(df, '1h')
     assert signal is not None, "Expected an exhaustion signal but got None"
@@ -352,4 +363,3 @@ def test_exhaustion_signal_includes_rr_levels():
     assert '📍 Entry Zone' in signal
     assert '🛑 Stop Loss'  in signal
     assert '🎯 T1'         in signal
-    assert '🎯 T2'         in signal

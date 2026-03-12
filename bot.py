@@ -188,14 +188,25 @@ def check_signals(df, interval):
 
         lower_entry = min(prev['open'], prev['close'])
         upper_entry = max(prev['open'], prev['close'])
-        swing_lows  = find_swing_lows(df, distance=5, atr_mult=0.5)
-        stop_price  = None
+
+        # Stop: nearest swing low below entry
+        swing_lows = find_swing_lows(df, distance=5, atr_mult=0.5)
+        stop_price = None
         for sw_idx, price in swing_lows:
             if sw_idx < len(df) - 2 and price < lower_entry:
                 stop_price = round(price - 0.5 * atr, 2)
                 break
 
-        rr = calculate_rr('bullish', lower_entry, upper_entry, stop_price, atr)
+        # Structural targets: swing highs above entry, ascending by price
+        swing_highs = find_swing_highs(df, distance=5, atr_mult=0.5)
+        targets = sorted(
+            [(i, p) for i, p in swing_highs if i < len(df) - 2 and p > upper_entry],
+            key=lambda x: x[1]
+        )
+        t1 = targets[0][1] if len(targets) >= 1 else None
+        t2 = targets[1][1] if len(targets) >= 2 else None
+
+        rr = calculate_rr('bullish', lower_entry, upper_entry, stop_price, atr, t1=t1, t2=t2)
         if rr:
             signal = "🟢 <b>ABSORPTION SIGNAL (BULLISH)</b>\n"
             signal += f"Pair: {SYMBOL} | TF: {interval}\n"
@@ -203,8 +214,9 @@ def check_signals(df, interval):
             signal += f"Trend: {trend}\n\n"
             signal += f"📍 Entry Zone : {rr['entry_low']:,.0f} – {rr['entry_high']:,.0f}\n"
             signal += f"🛑 Stop Loss  : {rr['stop']:,.0f} (Swing Low)\n"
-            signal += f"🎯 T1         : {rr['t1']:,.0f} (1.5R)\n"
-            signal += f"🎯 T2         : {rr['t2']:,.0f} (3.0R)\n"
+            signal += f"🎯 T1         : {rr['t1']:,.0f} ({rr['t1_rr']:.1f}R) — Swing High\n"
+            if rr['t2'] is not None:
+                signal += f"🎯 T2         : {rr['t2']:,.0f} ({rr['t2_rr']:.1f}R) — Swing High\n"
             signal += f"📊 RSI        : {prev['rsi']:.2f}"
 
     # Bearish Absorption: bullish/doji candle + close in lower 40%+ + high vol + narrow spread
@@ -216,14 +228,25 @@ def check_signals(df, interval):
 
         lower_entry = min(prev['open'], prev['close'])
         upper_entry = max(prev['open'], prev['close'])
+
+        # Stop: nearest swing high above entry
         swing_highs = find_swing_highs(df, distance=5, atr_mult=0.5)
-        stop_price  = None
+        stop_price = None
         for sw_idx, price in swing_highs:
             if sw_idx < len(df) - 2 and price > upper_entry:
                 stop_price = round(price + 0.5 * atr, 2)
                 break
 
-        rr = calculate_rr('bearish', lower_entry, upper_entry, stop_price, atr)
+        # Structural targets: swing lows below entry, descending by price
+        swing_lows = find_swing_lows(df, distance=5, atr_mult=0.5)
+        targets = sorted(
+            [(i, p) for i, p in swing_lows if i < len(df) - 2 and p < lower_entry],
+            key=lambda x: x[1], reverse=True
+        )
+        t1 = targets[0][1] if len(targets) >= 1 else None
+        t2 = targets[1][1] if len(targets) >= 2 else None
+
+        rr = calculate_rr('bearish', lower_entry, upper_entry, stop_price, atr, t1=t1, t2=t2)
         if rr:
             signal = "🔴 <b>ABSORPTION SIGNAL (BEARISH)</b>\n"
             signal += f"Pair: {SYMBOL} | TF: {interval}\n"
@@ -231,8 +254,9 @@ def check_signals(df, interval):
             signal += f"Trend: {trend}\n\n"
             signal += f"📍 Entry Zone : {rr['entry_low']:,.0f} – {rr['entry_high']:,.0f}\n"
             signal += f"🛑 Stop Loss  : {rr['stop']:,.0f} (Swing High)\n"
-            signal += f"🎯 T1         : {rr['t1']:,.0f} (1.5R)\n"
-            signal += f"🎯 T2         : {rr['t2']:,.0f} (3.0R)\n"
+            signal += f"🎯 T1         : {rr['t1']:,.0f} ({rr['t1_rr']:.1f}R) — Swing Low\n"
+            if rr['t2'] is not None:
+                signal += f"🎯 T2         : {rr['t2']:,.0f} ({rr['t2_rr']:.1f}R) — Swing Low\n"
             signal += f"📊 RSI        : {prev['rsi']:.2f}"
 
     # --- 2. EXHAUSTION ---
@@ -259,7 +283,16 @@ def check_signals(df, interval):
             upper_entry = max(prev['open'], prev['close'])
             stop_price  = round(current_sw_price - 0.5 * atr, 2)
 
-            rr = calculate_rr('bullish', lower_entry, upper_entry, stop_price, atr)
+            # Structural targets: swing highs above entry
+            targets_up = sorted(
+                [(i, p) for i, p in find_swing_highs(df, distance=5, atr_mult=0.5)
+                 if i < len(df) - 2 and p > upper_entry],
+                key=lambda x: x[1]
+            )
+            t1 = targets_up[0][1] if len(targets_up) >= 1 else None
+            t2 = targets_up[1][1] if len(targets_up) >= 2 else None
+
+            rr = calculate_rr('bullish', lower_entry, upper_entry, stop_price, atr, t1=t1, t2=t2)
             if rr:
                 signal = "🚀 <b>EXHAUSTION SIGNAL (REVERSAL UP)</b>\n"
                 signal += f"Pair: {SYMBOL} | TF: {interval}\n"
@@ -267,8 +300,9 @@ def check_signals(df, interval):
                 signal += f"Trend: {trend}\n\n"
                 signal += f"📍 Entry Zone : {rr['entry_low']:,.0f} – {rr['entry_high']:,.0f}\n"
                 signal += f"🛑 Stop Loss  : {rr['stop']:,.0f} (Swing Low)\n"
-                signal += f"🎯 T1         : {rr['t1']:,.0f} (1.5R)\n"
-                signal += f"🎯 T2         : {rr['t2']:,.0f} (3.0R)\n"
+                signal += f"🎯 T1         : {rr['t1']:,.0f} ({rr['t1_rr']:.1f}R) — Swing High\n"
+                if rr['t2'] is not None:
+                    signal += f"🎯 T2         : {rr['t2']:,.0f} ({rr['t2_rr']:.1f}R) — Swing High\n"
                 signal += f"📊 RSI        : {current_rsi:.2f}"
 
     # Bearish Exhaustion (Buying Climax): new swing high + RSI divergence + close not at top
@@ -292,7 +326,16 @@ def check_signals(df, interval):
             upper_entry = max(prev['open'], prev['close'])
             stop_price  = round(current_sw_price + 0.5 * atr, 2)
 
-            rr = calculate_rr('bearish', lower_entry, upper_entry, stop_price, atr)
+            # Structural targets: swing lows below entry
+            targets_dn = sorted(
+                [(i, p) for i, p in find_swing_lows(df, distance=5, atr_mult=0.5)
+                 if i < len(df) - 2 and p < lower_entry],
+                key=lambda x: x[1], reverse=True
+            )
+            t1 = targets_dn[0][1] if len(targets_dn) >= 1 else None
+            t2 = targets_dn[1][1] if len(targets_dn) >= 2 else None
+
+            rr = calculate_rr('bearish', lower_entry, upper_entry, stop_price, atr, t1=t1, t2=t2)
             if rr:
                 signal = "⚠️ <b>EXHAUSTION SIGNAL (REVERSAL DOWN)</b>\n"
                 signal += f"Pair: {SYMBOL} | TF: {interval}\n"
@@ -300,8 +343,9 @@ def check_signals(df, interval):
                 signal += f"Trend: {trend}\n\n"
                 signal += f"📍 Entry Zone : {rr['entry_low']:,.0f} – {rr['entry_high']:,.0f}\n"
                 signal += f"🛑 Stop Loss  : {rr['stop']:,.0f} (Swing High)\n"
-                signal += f"🎯 T1         : {rr['t1']:,.0f} (1.5R)\n"
-                signal += f"🎯 T2         : {rr['t2']:,.0f} (3.0R)\n"
+                signal += f"🎯 T1         : {rr['t1']:,.0f} ({rr['t1_rr']:.1f}R) — Swing Low\n"
+                if rr['t2'] is not None:
+                    signal += f"🎯 T2         : {rr['t2']:,.0f} ({rr['t2_rr']:.1f}R) — Swing Low\n"
                 signal += f"📊 RSI        : {current_rsi:.2f}"
 
     return signal
