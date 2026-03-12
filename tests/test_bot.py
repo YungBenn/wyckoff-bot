@@ -363,3 +363,38 @@ def test_exhaustion_signal_includes_rr_levels():
     assert '📍 Entry Zone' in signal
     assert '🛑 Stop Loss'  in signal
     assert '🎯 T1'         in signal
+
+
+def test_get_trend_bullish():
+    from bot import _get_trend
+    df = make_indicators()
+    # make_indicators sets ema_200 = close - 500, ema_50 = close - 200
+    # → close > ema_200 and ema_50 > ema_200 → BULLISH
+    assert _get_trend(df) == "BULLISH"
+
+
+def test_get_trend_bearish():
+    from bot import _get_trend
+    df = make_indicators()
+    df['ema_200'] = df['close'] + 500   # price below ema_200
+    df['ema_50']  = df['close'] + 200   # ema_50 below ema_200
+    assert _get_trend(df) == "BEARISH"
+
+
+def test_get_trend_neutral():
+    from bot import _get_trend
+    df = make_indicators()
+    df['ema_200'] = df['close'] + 1     # price below ema_200
+    df['ema_50']  = df['close'] + 100   # ema_50 above ema_200 → misaligned
+    assert _get_trend(df) == "NEUTRAL"
+
+
+def test_get_trend_returns_neutral_on_none():
+    from bot import _get_trend
+    assert _get_trend(None) == "NEUTRAL"
+
+
+def test_get_trend_returns_neutral_on_short_df():
+    from bot import _get_trend
+    df = make_indicators(50)   # only 50 rows, < 200 required
+    assert _get_trend(df) == "NEUTRAL"

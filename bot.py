@@ -83,6 +83,22 @@ def find_swing_highs(df, distance=5, atr_mult=0.5):
     return [(int(i), float(highs[i])) for i in sorted(peaks, reverse=True)]
 
 
+def _get_trend(df):
+    """Extract trend direction from a dataframe using EMA50/EMA200.
+
+    Returns 'BULLISH', 'BEARISH', or 'NEUTRAL'.
+    Used by main() to get the 4h HTF trend for gating lower timeframe signals.
+    """
+    if df is None or len(df) < 200:
+        return "NEUTRAL"
+    current = df.iloc[-1]
+    if current['close'] > current['ema_200'] and current['ema_50'] > current['ema_200']:
+        return "BULLISH"
+    if current['close'] < current['ema_200'] and current['ema_50'] < current['ema_200']:
+        return "BEARISH"
+    return "NEUTRAL"
+
+
 def calculate_rr(direction, lower_entry, upper_entry, stop, atr, t1=None, t2=None):
     """Calculate entry zone, stop, and structural R:R targets.
 
