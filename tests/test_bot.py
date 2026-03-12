@@ -398,3 +398,32 @@ def test_get_trend_returns_neutral_on_short_df():
     from bot import _get_trend
     df = make_indicators(50)   # only 50 rows, < 200 required
     assert _get_trend(df) == "NEUTRAL"
+
+
+def test_check_signals_blocked_when_htf_trend_disagrees():
+    """Signal returns None when local trend is BULLISH but htf_trend is BEARISH."""
+    import importlib
+    b = importlib.import_module('bot')
+    df = make_indicators()
+    # make_indicators produces BULLISH local trend; passing BEARISH must block all signals
+    signal = b.check_signals(df, '30m', htf_trend='BEARISH')
+    assert signal is None
+
+
+def test_check_signals_not_blocked_when_htf_trend_agrees():
+    """Gate passes when htf_trend matches local trend — same result as no gate."""
+    import importlib
+    b = importlib.import_module('bot')
+    df = make_indicators()
+    signal_gated   = b.check_signals(df, '30m', htf_trend='BULLISH')
+    signal_ungated = b.check_signals(df, '30m', htf_trend=None)
+    assert signal_gated == signal_ungated
+
+
+def test_check_signals_no_gate_when_htf_trend_is_none():
+    """htf_trend=None means no gate — used for 4h itself."""
+    import importlib
+    b = importlib.import_module('bot')
+    df = make_indicators()
+    signal = b.check_signals(df, '4h', htf_trend=None)
+    assert signal is None or isinstance(signal, str)

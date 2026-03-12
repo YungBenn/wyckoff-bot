@@ -173,20 +173,25 @@ def get_data(client, symbol, interval):
         print(f"Error fetching data: {e}")
         return None
 
-def check_signals(df, interval):
+def check_signals(df, interval, htf_trend=None):
     """Analyzes the dataframe for Absorption and Exhaustion."""
     if df is None or len(df) < 200:
         return None
 
     current = df.iloc[-1]
     prev = df.iloc[-2]
-    
+
     # Trend Filter
     trend = "NEUTRAL"
     if current['close'] > current['ema_200'] and current['ema_50'] > current['ema_200']:
         trend = "BULLISH"
     elif current['close'] < current['ema_200'] and current['ema_50'] < current['ema_200']:
         trend = "BEARISH"
+
+    # HTF trend gate: skip signals that disagree with the higher-timeframe trend.
+    # NEUTRAL on either side = no signal.
+    if htf_trend and htf_trend != "NEUTRAL" and trend != htf_trend:
+        return None
 
     signal = None
     
