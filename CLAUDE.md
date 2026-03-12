@@ -34,23 +34,27 @@ docker run --env-file .env wyckoff_bot
 
 ## Architecture
 
-All logic lives in `bot.py`. The main loop runs every 10 seconds and iterates over `TIMEFRAMES = ['1m', '5m', '30m', '1h', '4h']`.
+All logic lives in `bot.py`. The main loop runs every 10 seconds and iterates over `TIMEFRAMES = ['30m', '1h', '4h']`.
 
 **Data flow:** `get_data()` → fetches 500 Binance klines, computes RSI/EMA50/EMA200/VolumeSMA → `check_signals()` → `send_telegram_message()`
 
-**Signal logic in `check_signals()`:**
-- **Absorption**: High volume + narrow spread + **bearish candle** (VSA: smart money absorbs sellers) + close in upper 40%+ of candle range + BULLISH trend. Bearish absorption is the mirror. Old bug: code had candle direction inverted (green=bullish) — now fixed.
-- **Exhaustion**: Confirmed swing low/high via `find_swing_lows`/`find_swing_highs` (scipy) + RSI divergence compared at the actual prior swing index (not `df.iloc[-6]`).
-- **Every signal includes**: Entry Zone (candle body), Stop Loss (nearest swing ± 0.5×ATR), T1 (1.5R), T2 (3.0R).
-- **Quality filter**: Signal skipped if `risk > 3 × ATR` (structurally too wide for current volatility).
+**Multi-timeframe trend gate:** The main loop caches 4h data (5-min TTL) and calls `_get_trend()` to get the 4h trend each iteration. For 30m and 1h, signals only fire if the local trend matches the 4h trend (`htf_trend` gate). The 4h timeframe has no gate (it IS the HTF). This eliminates counter-trend noise.
 
-**Cooldown**: 60s for `1m` TF, 300s for all others (tracked via `last_signal_time` dict).
+**Signal logic in `check_signals(df, interval, htf_trend=None)`:**
+- **HTF gate**: If `htf_trend` is provided and disagrees with local trend → return None immediately.
+- **Absorption**: High volume + narrow spread + **bearish candle** (VSA: smart money absorbs sellers) + close in upper 40%+ of candle range + BULLISH trend. Bearish absorption is the mirror.
+- **Exhaustion**: Confirmed swing low/high via `find_swing_lows`/`find_swing_highs` (scipy) + RSI divergence compared at the actual prior swing index.
+- **Every signal includes**: Entry Zone (candle body), Stop Loss (nearest swing ± 0.5×ATR), T1/T2 from structural swing levels (actual R:R shown, e.g. `2.3R — Swing High`). T2 omitted if no second structural level found.
+- **Quality filters**: Signal skipped if `risk > 3 × ATR` (too wide) or structural T1 gives < 1.0R (too close).
+
+**Cooldown**: 300s for all timeframes (tracked via `last_signal_time` dict).
 
 **Helper functions (pure, testable):**
 - `close_position(high, low, close)` — returns 0.0–1.0 where close sits in the candle range
 - `find_swing_lows(df, distance=5, atr_mult=0.5)` — scipy find_peaks on inverted lows, ATR-based prominence
 - `find_swing_highs(df, distance=5, atr_mult=0.5)` — scipy find_peaks on highs
-- `calculate_rr(direction, lower_entry, upper_entry, stop, atr)` — returns entry/stop/T1/T2 dict or None
+- `_get_trend(df)` — returns "BULLISH" / "BEARISH" / "NEUTRAL" from EMA50/EMA200; returns "NEUTRAL" for None or short df
+- `calculate_rr(direction, lower_entry, upper_entry, stop, atr, t1=None, t2=None)` — returns entry/stop/T1/T2 dict with R:R values, or None
 
 ## Dependencies
 
