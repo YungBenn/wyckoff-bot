@@ -19,7 +19,7 @@ if not all([API_KEY, API_SECRET, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID]):
     raise ValueError("Missing keys in .env file! Please check your configuration.")
 
 SYMBOL = 'BTCUSDT'
-TIMEFRAMES = ['1m', '5m', '30m', '1h', '4h'] 
+TIMEFRAMES = ['30m', '1h', '4h'] 
 LIMIT = 500
 
 # ================= TELEGRAM FUNCTION =================
@@ -375,27 +375,33 @@ def check_signals(df, interval, htf_trend=None):
 def main():
     client = Client(API_KEY, API_SECRET)
     print(f"Bot started for {SYMBOL} on {TIMEFRAMES}...")
-    
-    # Track last signal time per timeframe to avoid spamming
-    # 1m needs a shorter cooldown (e.g., 1 min), others can be longer (5 min)
+
     last_signal_time = dict.fromkeys(TIMEFRAMES, 0)
-    
+
+    # 4h data cache — re-fetched every 5 minutes to avoid redundant API calls
+    htf_cache = {'df': None, 'ts': 0}
+
     while True:
         try:
+            # Refresh 4h HTF context if cache is stale (>= 5 min)
+            if time.time() - htf_cache['ts'] >= 300:
+                htf_cache['df'] = get_data(client, SYMBOL, '4h')
+                htf_cache['ts'] = time.time()
+
+            htf_trend = _get_trend(htf_cache['df'])
+
             for tf in TIMEFRAMES:
                 df = get_data(client, SYMBOL, tf)
-                signal = check_signals(df, tf)
+                # 4h has no gate (it IS the HTF); 30m and 1h are gated by 4h trend
+                gate = None if tf == '4h' else htf_trend
+                signal = check_signals(df, tf, htf_trend=gate)
                 current_time = time.time()
-                
-                # Dynamic cooldown: 1m TF = 60s cooldown, others = 300s
-                cooldown = 60 if tf == '1m' else 300
-                
-                if signal and (current_time - last_signal_time[tf] > cooldown):
+
+                if signal and (current_time - last_signal_time[tf] > 300):
                     print(f"Signal found on {tf}!")
                     send_telegram_message(signal)
                     last_signal_time[tf] = current_time
-            
-            # Check every 10 seconds for faster response on 1m timeframe
+
             time.sleep(10)
 
         except KeyboardInterrupt:
